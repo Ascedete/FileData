@@ -1,17 +1,8 @@
 from __future__ import annotations
-from typing import Generator, List, Literal, Optional, TextIO, Union, overload
+from typing import List, Literal, Optional, TextIO, Union, overload
 from .result import Result, Success, Error
 
 import re
-
-from enum import Enum, auto
-
-
-class IterationStrategy(Enum):
-    """Supported Strategies to traverse filedata object"""
-
-    Reversed = auto()
-    Forward = auto()
 
 
 class FileData:
