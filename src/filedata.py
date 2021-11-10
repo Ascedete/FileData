@@ -1,6 +1,17 @@
 from __future__ import annotations
-from typing import List, Optional, TextIO, Union, overload
+from typing import Generator, List, Literal, Optional, TextIO, Union, overload
 from .result import Result, Success, Error
+
+import re
+
+from enum import Enum, auto
+
+
+class IterationStrategy(Enum):
+    """Supported Strategies to traverse filedata object"""
+
+    Reversed = auto()
+    Forward = auto()
 
 
 class FileData:
@@ -105,30 +116,67 @@ class FileData:
             file.writelines(self.text)
         return
 
-    def seek(self, token: Union[str, List[str]], offset: int = 0):
+    def seek(
+        self,
+        token: Union[str, List[str]],
+        offset: int = 0,
+        match_case: bool = False,
+        strategy: Literal["Reverse", "Forward"] = "Forward",
+    ):
         """
         Returns 0-based index if line is found in instance
         If location in filedata is known, offset can speed up search
         Else None
         """
         tmp = self._index
-        self._index = offset
+        self._index = offset if strategy == "Forward" else self.max_index - offset
         found = None
 
-        for l in self:
-            if isinstance(token, str):
-                if token in l:
+        progress = self.newline if strategy == "Forward" else self.previous
+
+        # Configurations
+        case_sensitivity = re.IGNORECASE if not match_case else 0
+
+        # ******************
+        # *  Single Token  *
+        # ******************
+        if isinstance(token, str):
+            search_pattern = re.compile(
+                f".*{re.escape(token)}.*",
+                case_sensitivity,
+            )
+            while l := progress():
+                if search_pattern.search(l):
                     found = self._index
+                    break
                 else:
                     continue
-            else:
-                if token[0] in l:
-                    for sub_token in token[1:]:
-                        l = self.newline()
-                        if not sub_token in l:
+
+        # **********************
+        # *  Multiline tokens  *
+        # **********************
+        else:
+            search_patterns = [
+                re.compile(
+                    f".*{re.escape(_subtoken)}.*",
+                    case_sensitivity,
+                )
+                for _subtoken in token
+            ]
+            while l := progress():
+                if search_patterns[0].search(l):
+                    for pattern in search_patterns[1:]:
+                        l = progress()
+                        if not l:
+                            return
+                        if not pattern.search(l):
                             return
                     found = self._index
+                    break
 
+        # **********************************
+        # *  Restore previous line number  *
+        # **********************************
         self._index = tmp
         return found
 
@@ -152,11 +200,20 @@ class FileData:
         else:
             return None
 
-    def next(self):
-        """Skip current line"""
-        self._index += 1
+    def next(self, direction: Literal["Forward", "Reverse"] = "Forward"):
+        """Skip current line in accordance to direction
+
+        Args:
+            direction ("Forward"|"Reverse"): Goto next or previous line
+        """
+        self._index += 1 if direction == "Forward" else -1
 
     def __iter__(self):
+        """Yields a forward incrementing iterator
+
+        Yields:
+            Generator over lines in file
+        """
         while not (self.max_index) == self._index:
             yield self.text[self._index]
             self.next()
@@ -168,8 +225,23 @@ class FileData:
         self.next()
         return self.readline()
 
+    def previous(self) -> Optional[str]:
+        """Yields the previous line if linenumber inbounds
+        !!! Decrements index!
+
+        Returns:
+            Optional[str]: previous line
+        """
+        if self.isStart():
+            return
+        self.next("Reverse")
+        return self.readline()
+
     def isEOF(self):
         return self.max_index < self._index
+
+    def isStart(self):
+        return self._index == 0
 
     def insert(self, line_nr: int, new: str) -> Result[str]:
         """
