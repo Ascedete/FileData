@@ -1,8 +1,30 @@
 from __future__ import annotations
-from typing import List, Literal, Optional, TextIO, Union, overload
-from .result import Result, Success, Error
 
-import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from typing import List, Literal, Optional, TextIO, overload
+
+from .result import Success, Error, IOResult
+
+# FileDataResult = Result[str]
+IterationStrategy = Literal["Forward", "Reverse"]
+
+
+@dataclass(init=False, eq=True, unsafe_hash=True)
+class FilePosition:
+    """
+    Current position of Cursor in File
+    """
+
+    def __init__(self, line: int, column: int) -> None:
+        if line > 0 and column > 0:
+            self.line = line
+            self.column = column
+        else:
+            raise Exception(
+                f"Cannot initialize FilePosition with line: {line}, column: {column} -> arguments need to be >= 1"
+            )
 
 
 class FileData:
@@ -10,8 +32,36 @@ class FileData:
 
     def __init__(self, text: str) -> None:
         self.text = text
-        self._index = 0
+        self.cursor = FilePosition(1, 1)
 
+    # Basic File Information
+
+    def _line_end(self):
+        return len(self.text[self._line_index()])
+
+    def _line_index(self):
+        """
+        Index to line in text
+        """
+        return self.cursor.line - 1
+
+    def _max_index(self):
+        return len(self.text) - 1
+
+    def _isIndexInbounds(self, index: int) -> bool:
+        """Will check if index is in range of currently saved text"""
+        return index > -1 and index < self._max_index()
+
+    def isEOF(self):
+        """Is cursor still pointing to correct file content or overbounds"""
+        li = self._line_index()
+        if li > self._max_index():
+            return True
+
+        line = self.text[li]
+        return len(line) < self.cursor.column
+
+    # Reading file
     @property
     def text(self) -> List[str]:
         """Represents filetext splitted per Line"""
@@ -21,234 +71,251 @@ class FileData:
     def text(self, new: str):
         text = [line + "\n" for line in new.splitlines()]
         self._text = text
+        self.cursor = FilePosition(1, 1)
 
-    def set(self, index: int, newline: str) -> bool:
+    def read(self, linenr: int = -1) -> Optional[str]:
         """
-        Set text at line index to newline if index is valid
+        Read the whole line at line number
+        Default or linenr = -1 -> current line
         """
-        if self._check_index_inbounds(index):
-            self.text[index] = newline + "\n"
-            return True
+        if linenr == -1:
+            return self.text[self._line_index()][self.cursor.column - 1 : -1]
+
+        if linenr > len(self.text):
+            return
         else:
-            return False
+            return self.text[linenr - 1]
 
-    def patch_line(self, new: str, line_nr: int) -> bool:
-        """
-        Replace line at line_nr with new
-        ERRORS: INDEX_ERROR -> line_nr not in self
-        """
-        if line_nr > 0 and line_nr < self.max_index:
-            if self.text[line_nr] == new:
-                return True
+    def consume_line(self):
+        content = self.read()
+        self.next()
+        return content
 
-            self.text[line_nr] = new
-            return True
+    def move_cursor(self, new_position: FilePosition) -> IOResult:
+        """Move the currently read fileposition to new_position
+        if new_position outside of supported range, will raise IndexError
+        """
+        if (l := self.read(new_position.line)) and new_position.column <= len(l):
+            self.cursor = new_position
+            return
         else:
-            return False
-
-    @classmethod
-    def patch(
-        cls, filepath: str, new: str, position: Union[int, str, List[str]]
-    ) -> Result[str]:
-        """
-        Try to patch file at filepath with new at position
-        if new contains newlines, multiple lines will be inserted
-        Returns Success Object in case of correct patching
-        Error Messages:
-        - FileNotFound, TriggerNotFound, PermissionDenied
-        """
-        try:
-            with open(filepath, "r") as fd:
-                nd = cls.data(fd)
-        except FileNotFoundError:
-            return Error("FileNotFound")
-
-        if isinstance(position, str) or isinstance(position, List):
-            pos = nd.seek(position)
-            if pos is None:
-                return Error("TriggerNotFound")
-            pos += 1
-        else:
-            pos = position
-
-        trigger = new.splitlines()[0]
-        # if not (trigger := new.splitlines()[0]):
-        #     return Error("TriggerNotFound")
-
-        if nd.seek(trigger, pos):
-            # Potentially dangerous assumption...
-            return Success("PatchAlreadyDone")
-
-        if isinstance(res := nd.insert(pos, new), Error):
-            return res
-        try:
-            nd.dump(filepath)
-            return Success("")
-        except PermissionError:
-            return Error("PermissionDenied")
-
-    @property
-    def max_index(self):
-        return len(self.text)
-
-    @overload
-    def dump(self, file: TextIO):
-        """Dump self to file_io -> make sure to have write permissions"""
-
-    @overload
-    def dump(self, file: str):
-        """Dump self to file at given str. Write permissions necessary"""
-
-    def dump(self, file: Union[str, TextIO]):
-        if isinstance(file, str):
-            with open(file, "w", encoding="utf-8") as fd:
-                fd.writelines(self.text)
-        else:
-            file.writelines(self.text)
-        return
-
-    def seek(
-        self,
-        token: Union[str, List[str]],
-        offset: int = 0,
-        match_case: bool = False,
-        strategy: Literal["Reverse", "Forward"] = "Forward",
-    ):
-        """
-        Returns 0-based index if line is found in instance
-        If location in filedata is known, offset can speed up search
-        Else None
-        """
-        tmp = self._index
-        self._index = offset if strategy == "Forward" else self.max_index - offset
-        found = None
-
-        progress = self.newline if strategy == "Forward" else self.previous
-
-        # Configurations
-        case_sensitivity = re.IGNORECASE if not match_case else 0
-
-        # ******************
-        # *  Single Token  *
-        # ******************
-        if isinstance(token, str):
-            search_pattern = re.compile(
-                f".*{re.escape(token)}.*",
-                case_sensitivity,
-            )
-            while l := progress():
-                if search_pattern.search(l):
-                    found = self._index
-                    break
-                else:
-                    continue
-
-        # **********************
-        # *  Multiline tokens  *
-        # **********************
-        else:
-            search_patterns = [
-                re.compile(
-                    f".*{re.escape(_subtoken)}.*",
-                    case_sensitivity,
-                )
-                for _subtoken in token
-            ]
-            while l := progress():
-                if search_patterns[0].search(l):
-                    for pattern in search_patterns[1:]:
-                        l = progress()
-                        if not l:
-                            return
-                        if not pattern.search(l):
-                            return
-                    found = self._index
-                    break
-
-        # **********************************
-        # *  Restore previous line number  *
-        # **********************************
-        self._index = tmp
-        return found
-
-    @property
-    def line_number(self):
-        """Equals the currently processed line number"""
-        return self._index + 1
-
-    def _check_index_inbounds(self, index: int) -> bool:
-        return index > -1 and index < self.max_index
-
-    def readline(self, index: int = -1) -> Optional[str]:
-        """
-        Read the line at 0 based line number
-        If index -1, return currently selected line
-        """
-        if index == -1:
-            index = self._index
-        if self._check_index_inbounds(index):
-            return self.text[index]
-        else:
-            return None
+            return Error(f"Cannot move file cursor to position {new_position}")
 
     def next(self, direction: Literal["Forward", "Reverse"] = "Forward"):
-        """Skip current line in accordance to direction
-
+        """
+        Move cursor according to direction
         Args:
             direction ("Forward"|"Reverse"): Goto next or previous line
         """
-        self._index += 1 if direction == "Forward" else -1
+        new_cursor = FilePosition(
+            self.cursor.line + (1 if direction == "Forward" else -1), 1
+        )
+        return self.move_cursor(new_cursor)
 
     def __iter__(self):
         """Yields a forward incrementing iterator
 
         Yields:
-            Generator over lines in file
+            Generator over *lines* in file
         """
-        while not (self.max_index) == self._index:
-            yield self.text[self._index]
-            self.next()
+        while True:
+            yield self.text[self._line_index()]
+            match self.next():
+                case Error():
+                    break
+                case _:
+                    continue
 
-    def newline(self) -> Optional[str]:
-        """yields new line if not EOF, else returns nothing
-        Progresses line_number of FileData instance!
+    # Write file content
+    def overwrite_line(self, line_nr: int, newline: str) -> IOResult:
         """
-        self.next()
-        return self.readline()
-
-    def previous(self) -> Optional[str]:
-        """Yields the previous line if linenumber inbounds
-        !!! Decrements index!
-
-        Returns:
-            Optional[str]: previous line
+        Set text at line index to newline if index is valid
         """
-        if self.isStart():
+        index = line_nr - 1
+        cleaned = newline.rstrip("\n")
+        if self._isIndexInbounds(index):
+            self.text[index] = cleaned + "\n"
             return
-        self.next("Reverse")
-        return self.readline()
+        else:
+            return Error(f"given Index {index} not inbounds")
 
-    def isEOF(self):
-        return self.max_index < self._index
-
-    def isStart(self):
-        return self._index == 0
-
-    def insert(self, line_nr: int, new: str) -> Result[str]:
+    def insert(self, line_nr: int, new: str):
         """
-        Insert new at line_nr to self. line_nr is 0 based
+        Insert new at line_nr to self. line_nr is 1 based
         If position is outside of bounds, returns Error("NOT_INBOUNDS")
         On Success -> Success Object
         If new contains \n -> adds multiple line to self from line_nr
-
         """
-        if self._check_index_inbounds(line_nr):
+        start_index = line_nr - 1
+        if self._isIndexInbounds(start_index):
             splitted = new.splitlines()
             for (i, line) in enumerate(splitted):
-                self.text.insert(line_nr + i, line + "\n")
+                self.text.insert(start_index + i, line + "\n")
             return Success("")
-        return Error("NOT_INBOUNDS")
+        else:
+            return Error(
+                f"given line_nr: {line_nr} not inbounds of filedata with length: {len(self.text)}"
+            )
 
     @classmethod
     def data(cls, fd: TextIO) -> "FileData":
         return cls(fd.read())
+
+
+# -------------------------------------
+# Helpers to interact with FileData
+# ------------------------------------
+
+
+def seek(
+    data: FileData,
+    item: str,
+    start: Optional[int] = None,
+    strategy: IterationStrategy = "Forward",
+):
+    """
+    Seek a string item in data from start and iterate over it's content using strategy
+    Will not modify the data
+    """
+
+    old_cursor = data.cursor
+
+    if start:
+        if not data.move_cursor(FilePosition(start, 1)) is None:
+            return
+
+    res = None
+    while data.next(strategy) is None:
+        l = data.read()
+        assert (
+            l is not None
+        )  # can afford assert because next returns error if not inbounds
+        if (pos := l.find(item)) != -1:
+            res = FilePosition(data.cursor.line, pos + 1)
+            break
+
+    data.move_cursor(old_cursor)
+    return res
+
+
+@overload
+def save_filedata(data: FileData, file: TextIO) -> IOResult:
+    """Dump self to file_io -> make sure to have write permissions"""
+
+
+@overload
+def save_filedata(data: FileData, file: str) -> IOResult:
+    """Dump self to file at given str. Write permissions necessary"""
+
+
+@overload
+def save_filedata(data: FileData, file: Path) -> IOResult:
+    """Dump self to file at given str. Write permissions necessary"""
+
+
+def save_filedata(data: FileData, file: str | TextIO | Path):
+    match file:
+        case str() | Path():
+            try:
+                with open(file, "w", encoding="utf-8") as fd:
+                    fd.writelines(data.text)
+            except FileNotFoundError:
+                return Error(f"Dumping failed -> not enough permission for {file}!")
+
+        case TextIO():
+            file.writelines(data.text)
+    return
+
+
+# ------------------
+# FileData patching
+# ------------------
+
+
+def _get_trigger_start(nd: FileData, position: int | str):
+    """Find position where patching should start
+    upon error: TriggerNotFound
+    """
+    match position:
+        case str():
+            pos = seek(nd, item=position)
+            if pos is None:
+                return Error("TriggerNotFound")
+            else:
+                return Success(pos.line)
+        case _:
+            return Success(position)
+
+
+def _needs_patch(nd: FileData, new: str):
+    """
+    Checks if file has already patch installed.
+    If found, false will be returned
+    If patch not installed, true
+
+    REFACTORING -> Get Patch position upon success
+    """
+    content = new.splitlines()
+    if not (start := seek(nd, content[0])):
+        return True
+
+    for i in range(1, len(content)):
+        l = nd.read(start.line + i)
+        if not l or content[i] not in l:
+            return True
+        else:
+            continue
+    return False
+
+
+def insert_content(nd: FileData, new: str, pos: int, path: Path):
+    """dump the patch from pos to path"""
+    res = nd.insert(pos, new)
+    match res:
+        case Error():
+            return res
+        case Success():
+            return save_filedata(nd, path)
+
+
+def patch(path: Path, new: str, position: int | str | list[str]):
+    """
+    Try to patch file at path with new at position
+    if new contains newlines, multiple lines will be inserted
+    Returns Success Object in case of correct patching
+    Error Messages:
+    - FileNotFound, TriggerNotFound, PermissionDenied
+    """
+
+    try:
+        with open(path, "r") as fd:
+            nd = FileData.data(fd)
+    except FileNotFoundError:
+        return Error("FileNotFound")
+
+    # now proceed with patching core
+    match position:
+        case int() | str():
+            # if isinstance(res := _get_trigger_start(nd, position), Error):
+            #     return res
+            res = _get_trigger_start(nd, position)
+        case list():
+            res = _get_trigger_start(nd, position[0])
+    if isinstance(res, Error):
+        return res
+
+    start = res.val
+    if not (_needs_patch(nd, new)):
+        return
+
+    return insert_content(nd, new, start, path)
+
+
+# Patch only a single line
+
+
+def patch_line(nd: FileData, new: str, line_nr: int) -> IOResult:
+    """
+    Replace line at line_nr with new
+    """
+    nd.overwrite_line(line_nr, new)

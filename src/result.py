@@ -1,7 +1,15 @@
 """
 Module defines Result Sum Type and allows to specify Success and Errors more clearly
 """
-from typing import Generic, NamedTuple, TypeVar, Union, overload
+from typing import (
+    Callable,
+    Generic,
+    NamedTuple,
+    Optional,
+    TypeVar,
+    Union,
+    overload,
+)
 
 # from dataclasses import dataclass
 ResT = TypeVar("ResT")
@@ -16,6 +24,9 @@ class Success(Generic[ResT]):
     def __init__(self, nval: ResT) -> None:
         self.val: ResT = nval
 
+    def __bool__(self):
+        return True
+
 
 class Error(NamedTuple):
     """Signify erronous operation of function.
@@ -23,6 +34,9 @@ class Error(NamedTuple):
     """
 
     val: str = ""
+
+    def __bool__(self):
+        return False
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, Error):
@@ -56,3 +70,25 @@ def unwrap(result: Result[ResT]) -> ResT:
     if not isinstance(result, Success):
         raise ValueError
     return result.val
+
+
+ResO = TypeVar("ResO")
+ResFunction = Callable[[ResO], Result[ResT]]
+
+
+def resolve(f: ResFunction[ResO, ResT]):
+    """Bind for Result Type -> if item is of instance Success, apply f to it
+    else return item directly without evaluating f
+    """
+
+    def apply(item: Result[ResO]):
+        match item:
+            case Success():
+                return f(item.val)
+            case Error():
+                return item
+
+    return apply
+
+
+IOResult = Optional[Error]

@@ -1,8 +1,7 @@
 import pytest
 
 
-from ..src import *
-
+from ..src.filedata import *
 
 TEST_FILE = "./Test/testfile.txt"
 
@@ -18,6 +17,7 @@ event SIMULATION_END;
 `endif
  
 """
+# reading
 
 
 def test_creation():
@@ -26,10 +26,13 @@ def test_creation():
         assert nd
 
 
-def test_seek_casesensitive():
-    input = "lala evil_hint\n better EVIL_hint\n best Evil_Hint"
-    nd = FileData(input)
-    assert nd.seek("Evil_Hint", match_case=True) == 2
+def test_read():
+    with open(TEST_FILE, "r") as fd:
+        nd = FileData.data(fd)
+        l = nd.read()
+        assert l
+        assert l.strip() == "This is a very big file"
+        assert nd.read(3).strip() == "--- Marker ---"
 
 
 @pytest.mark.parametrize("input", data)
@@ -48,46 +51,32 @@ def test_insert():
     """Test if insert of new string works correctly"""
     input = data[0]
     nd = FileData(input)
-    nd.insert(0, "z")
+    assert nd.insert(1, "z")
     assert "".join(nd.text) == "z\n" + data[0]
+    assert not nd.insert(0, "evil")
 
 
-def test_combined():
-    tb_stim_snippet = """// test-case stimulus
-`include 'tc.vams'
- 
-"""
-    nd = FileData(tb_stim_snippet)
-    pos = nd.seek("`include 'tc.vams'")
-    assert pos
-    nd.insert(
-        pos + 1,
-        """event SIMULATION_END;
-
-`ifdef CONDITION_MONITOR_ENABLED
-    ConditionMonitor simulation_voltage_monitor();
-`endif
-""",
-    )
-    joined = "".join(nd.text)
-    assert insertion_reference == joined
-
-
-def test_patch_line():
+def test_move_cursor():
     nd = FileData(data[0])
-    nd.patch_line("PATCH", 1)
-    assert nd.text[1] == "PATCH"
+    assert nd.move_cursor(FilePosition(3, 1)) is None
 
 
 def test_previous():
     nd = FileData(data[0])
-    l = nd.readline()
+    l = nd.read()
     nd.next()
-    assert nd.previous() == l
+    nd.next("Reverse")
+    assert nd.read() == l
+    nd.next()
+    assert nd.read() != l
 
 
-def test_seek_reverse():
-    with open(TEST_FILE, "r") as fd:
-        nd = FileData.data(fd)
+def test_seek():
+    data = FileData(insertion_reference)
+    old = data.cursor
 
-    assert 8 == nd.seek("Far away", strategy="Reverse")
+    assert (res := seek(data, "event"))
+    assert (l := data.read(res.line))
+    assert l.find("event") is not -1
+    assert old == data.cursor
+    assert seek(data, "event", 5, "Reverse")
