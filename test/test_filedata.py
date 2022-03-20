@@ -1,7 +1,8 @@
 import pytest
 
 
-from ..src.filedata import *
+from filedata.filedata import *
+
 
 TEST_FILE = "./Test/testfile.txt"
 
