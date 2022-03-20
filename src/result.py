@@ -61,6 +61,9 @@ class Error(NamedTuple):
         else:
             return Error(msg)
 
+    def __repr__(self) -> str:
+        return self.val
+
 
 Result = Union[Success[ResT], Error]
 

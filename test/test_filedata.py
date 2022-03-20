@@ -26,13 +26,35 @@ def test_creation():
         assert nd
 
 
+def test_readline():
+    with open(TEST_FILE, "r") as fd:
+        nd = FileData.data(fd)
+        l = nd.readline()
+        assert l
+        assert l.strip() == "This is a very big file"
+        assert nd.readline(3).strip() == "--- Marker ---"
+
+
 def test_read():
     with open(TEST_FILE, "r") as fd:
         nd = FileData.data(fd)
-        l = nd.read()
-        assert l
-        assert l.strip() == "This is a very big file"
-        assert nd.read(3).strip() == "--- Marker ---"
+
+    c = nd.read()
+    assert c and c == "T"
+
+
+def test_consume():
+    with open(TEST_FILE, "r") as fd:
+        nd = FileData.data(fd)
+        c = nd.read()
+        assert c == nd.consume()
+        assert c is not nd.read() and nd.read() == "h"
+
+    nd = FileData(data[0])
+    assert nd.consume() == "a"
+    assert nd.read() == "\n"
+    assert nd.consume() == "\n"
+    assert nd.read() == "b"
 
 
 @pytest.mark.parametrize("input", data)
@@ -59,6 +81,9 @@ def test_insert():
 def test_move_cursor():
     nd = FileData(data[0])
     assert nd.move_cursor(FilePosition(3, 1)) is None
+    c = nd.read()
+    assert c and c == "c"
+    assert isinstance(nd.move_cursor(FilePosition(4, 1)), Error)
 
 
 def test_previous():
@@ -76,7 +101,7 @@ def test_seek():
     old = data.cursor
 
     assert (res := seek(data, "event"))
-    assert (l := data.read(res.line))
+    assert (l := data.readline(res.line))
     assert l.find("event") is not -1
     assert old == data.cursor
     assert seek(data, "event", 5, "Reverse")

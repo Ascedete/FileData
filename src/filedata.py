@@ -36,30 +36,44 @@ class FileData:
 
     # Basic File Information
 
-    def _line_end(self):
-        return len(self.text[self._line_index()])
-
     def _line_index(self):
         """
         Index to line in text
         """
         return self.cursor.line - 1
 
+    def _line_end(self):
+        return len(self.text[self._line_index()])
+
+    def isEOL(self):
+        return (self._line_end()) < self.cursor.column
+
     def _max_index(self):
         return len(self.text) - 1
 
     def _isIndexInbounds(self, index: int) -> bool:
         """Will check if index is in range of currently saved text"""
-        return index > -1 and index < self._max_index()
+        return index > -1 and index <= self._max_index()
 
     def isEOF(self):
         """Is cursor still pointing to correct file content or overbounds"""
-        li = self._line_index()
-        if li > self._max_index():
+        if self._line_index() > self._max_index():
             return True
 
-        line = self.text[li]
-        return len(line) < self.cursor.column
+        return self.isEOL()
+
+    def next(self, direction: IterationStrategy = "Forward"):
+        match direction:
+            case "Forward":
+                if self._isIndexInbounds(self._line_index() + 1):
+                    self.cursor = FilePosition(self.cursor.line + 1, 1)
+                else:
+                    return Error("Cannot move to next line -> EOF")
+            case "Reverse":
+                if self._isIndexInbounds(self._line_index() - 1):
+                    self.cursor = FilePosition(self.cursor.line - 1, 1)
+                else:
+                    return Error("Cannot move to next line -> EOF")
 
     # Reading file
     @property
@@ -73,7 +87,7 @@ class FileData:
         self._text = text
         self.cursor = FilePosition(1, 1)
 
-    def read(self, linenr: int = -1) -> Optional[str]:
+    def readline(self, linenr: int = -1) -> Optional[str]:
         """
         Read the whole line at line number
         Default or linenr = -1 -> current line
@@ -86,8 +100,31 @@ class FileData:
         else:
             return self.text[linenr - 1]
 
+    def _current_character(self):
+        return self.text[self.cursor.line - 1][self.cursor.column - 1]
+
+    def read(self) -> Optional[str]:
+        if self.isEOF():
+            return
+        if not self.isEOL():
+            return self._current_character()
+        else:
+            return self.text[self.cursor.line][0]
+
+    def _next_character_cursor(self):
+        if self.cursor.column == self._line_end():
+            self.cursor = FilePosition(self.cursor.line + 1, 1)
+        else:
+            self.cursor = FilePosition(self.cursor.line, self.cursor.column + 1)
+
+    def consume(self) -> Optional[str]:
+        if not (c := self.read()):
+            return
+        self._next_character_cursor()
+        return c
+
     def consume_line(self):
-        content = self.read()
+        content = self.readline()
         self.next()
         return content
 
@@ -95,22 +132,11 @@ class FileData:
         """Move the currently read fileposition to new_position
         if new_position outside of supported range, will raise IndexError
         """
-        if (l := self.read(new_position.line)) and new_position.column <= len(l):
+        if (l := self.readline(new_position.line)) and new_position.column <= len(l):
             self.cursor = new_position
             return
         else:
             return Error(f"Cannot move file cursor to position {new_position}")
-
-    def next(self, direction: Literal["Forward", "Reverse"] = "Forward"):
-        """
-        Move cursor according to direction
-        Args:
-            direction ("Forward"|"Reverse"): Goto next or previous line
-        """
-        new_cursor = FilePosition(
-            self.cursor.line + (1 if direction == "Forward" else -1), 1
-        )
-        return self.move_cursor(new_cursor)
 
     def __iter__(self):
         """Yields a forward incrementing iterator
@@ -186,7 +212,7 @@ def seek(
 
     res = None
     while data.next(strategy) is None:
-        l = data.read()
+        l = data.readline()
         assert (
             l is not None
         )  # can afford assert because next returns error if not inbounds
@@ -260,7 +286,7 @@ def _needs_patch(nd: FileData, new: str):
         return True
 
     for i in range(1, len(content)):
-        l = nd.read(start.line + i)
+        l = nd.readline(start.line + i)
         if not l or content[i] not in l:
             return True
         else:
