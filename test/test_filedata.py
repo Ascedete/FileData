@@ -58,6 +58,13 @@ def test_consume():
     assert nd.read() == "b"
 
 
+def test_copy():
+    d1 = FileData(data[0])
+    d1.next()
+    d2 = d1.copy()
+    assert d2.read() == d1.read() == "b"
+
+
 @pytest.mark.parametrize("input", data)
 def test_iteration(input: str):
     """Test that correct iteration is possible"""

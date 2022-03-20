@@ -30,9 +30,34 @@ class FilePosition:
 class FileData:
     """Store and manage File contents with multiple helpers"""
 
+    @overload
     def __init__(self, text: str) -> None:
-        self.text = text
-        self.cursor = FilePosition(1, 1)
+        ...
+
+    @overload
+    def __init__(self, text: list[str]) -> None:
+        ...
+
+    @overload
+    def __init__(self, text: TextIO) -> None:
+        ...
+
+    def __init__(self, text: str | list[str] | TextIO) -> None:
+        match text:
+            case str():
+                self._text = self._set_text(text)
+            case list():
+                self._text = text
+            case TextIO():
+                self._text = text.readlines()
+
+        self.cursor: FilePosition = FilePosition(1, 1)
+
+    def copy(self):
+        """Create a shallow copy of FileData"""
+        nd = FileData(self._text)
+        nd.move_cursor(self.cursor)
+        return nd
 
     # Basic File Information
 
@@ -81,11 +106,14 @@ class FileData:
         """Represents filetext splitted per Line"""
         return self._text
 
-    @text.setter
-    def text(self, new: str):
-        text = [line + "\n" for line in new.splitlines()]
-        self._text = text
-        self.cursor = FilePosition(1, 1)
+    def _set_text(self, new: str):
+        return [line + "\n" for line in new.splitlines()]
+
+    # @text.setter
+    # def text(self, new: str):
+    #     text = [line + "\n" for line in new.splitlines()]
+    #     self._text = text
+    #     self.cursor = FilePosition(1, 1)
 
     def readline(self, linenr: int = -1) -> Optional[str]:
         """
