@@ -11,7 +11,7 @@ from .result import Success, Error, IOResult
 IterationStrategy = Literal["Forward", "Reverse"]
 
 
-@dataclass(init=False, eq=True, unsafe_hash=True)
+@dataclass(init=False, eq=True, unsafe_hash=True, repr=True)
 class FilePosition:
     """
     Current position of Cursor in File
