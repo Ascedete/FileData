@@ -43,13 +43,12 @@ class FileData:
         ...
 
     def __init__(self, text: str | list[str] | TextIO) -> None:
-        match text:
-            case str():
-                self._text = self._set_text(text)
-            case list():
-                self._text = text
-            case TextIO():
-                self._text = text.readlines()
+        if isinstance(text, str):
+            self._text = self._set_text(text)
+        elif isinstance(text, list):
+            self._text = text
+        else:
+            self._text = text.readlines()
 
         self.cursor: FilePosition = FilePosition(1, 1)
 
@@ -88,17 +87,16 @@ class FileData:
         return self.isEOL()
 
     def next(self, direction: IterationStrategy = "Forward"):
-        match direction:
-            case "Forward":
-                if self._isIndexInbounds(self._line_index() + 1):
-                    self.cursor = FilePosition(self.cursor.line + 1, 1)
-                else:
-                    return Error("Cannot move to next line -> EOF")
-            case "Reverse":
-                if self._isIndexInbounds(self._line_index() - 1):
-                    self.cursor = FilePosition(self.cursor.line - 1, 1)
-                else:
-                    return Error("Cannot move to next line -> EOF")
+        if direction == "Forward":
+            if self._isIndexInbounds(self._line_index() + 1):
+                self.cursor = FilePosition(self.cursor.line + 1, 1)
+            else:
+                return Error("Cannot move to next line -> EOF")
+        elif direction == "Reverse":
+            if self._isIndexInbounds(self._line_index() - 1):
+                self.cursor = FilePosition(self.cursor.line - 1, 1)
+            else:
+                return Error("Cannot move to next line -> EOF")
 
     # Reading file
     @property
@@ -174,11 +172,10 @@ class FileData:
         """
         while True:
             yield self.text[self._line_index()]
-            match self.next():
-                case Error():
-                    break
-                case _:
-                    continue
+            if isinstance(self.next(), Error):
+                break
+            else:
+                continue
 
     # Write file content
     def overwrite_line(self, line_nr: int, newline: str) -> IOResult:
@@ -268,16 +265,15 @@ def save_filedata(data: FileData, file: Path) -> IOResult:
 
 
 def save_filedata(data: FileData, file: str | TextIO | Path):
-    match file:
-        case str() | Path():
-            try:
-                with open(file, "w", encoding="utf-8") as fd:
-                    fd.writelines(data.text)
-            except FileNotFoundError:
-                return Error(f"Dumping failed -> not enough permission for {file}!")
+    if isinstance(file, str) or isinstance(file, Path):
+        try:
+            with open(file, "w", encoding="utf-8") as fd:
+                fd.writelines(data.text)
+        except FileNotFoundError:
+            return Error(f"Dumping failed -> not enough permission for {file}!")
 
-        case TextIO():
-            file.writelines(data.text)
+    else:
+        file.writelines(data.text)
     return
 
 
@@ -290,15 +286,14 @@ def _get_trigger_start(nd: FileData, position: int | str):
     """Find position where patching should start
     upon error: TriggerNotFound
     """
-    match position:
-        case str():
-            pos = seek(nd, item=position)
-            if pos is None:
-                return Error("TriggerNotFound")
-            else:
-                return Success(pos.line)
-        case _:
-            return Success(position)
+    if isinstance(position, str):
+        pos = seek(nd, item=position)
+        if pos is None:
+            return Error("TriggerNotFound")
+        else:
+            return Success(pos.line)
+    else:
+        return Success(position)
 
 
 def _needs_patch(nd: FileData, new: str):
@@ -325,11 +320,10 @@ def _needs_patch(nd: FileData, new: str):
 def insert_content(nd: FileData, new: str, pos: int, path: Path):
     """dump the patch from pos to path"""
     res = nd.insert(pos, new)
-    match res:
-        case Error():
-            return res
-        case Success():
-            return save_filedata(nd, path)
+    if not res:
+        return res
+    else:
+        return save_filedata(nd, path)
 
 
 def patch(path: Path, new: str, position: int | str | list[str]):
@@ -348,13 +342,12 @@ def patch(path: Path, new: str, position: int | str | list[str]):
         return Error("FileNotFound")
 
     # now proceed with patching core
-    match position:
-        case int() | str():
-            # if isinstance(res := _get_trigger_start(nd, position), Error):
-            #     return res
-            res = _get_trigger_start(nd, position)
-        case list():
-            res = _get_trigger_start(nd, position[0])
+    if isinstance(position, int) or isinstance(position, str):
+        # if isinstance(res := _get_trigger_start(nd, position), Error):
+        #     return res
+        res = _get_trigger_start(nd, position)
+    else:
+        res = _get_trigger_start(nd, position[0])
     if isinstance(res, Error):
         return res
 

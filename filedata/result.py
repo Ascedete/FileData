@@ -85,11 +85,10 @@ def resolve(f: ResFunction[ResO, ResT]):
     """
 
     def apply(item: Result[ResO]):
-        match item:
-            case Success():
-                return f(item.val)
-            case Error():
-                return item
+        if item:
+            return f(item.val)
+        else:
+            return item
 
     return apply
 

@@ -4,7 +4,7 @@ import pytest
 from filedata.filedata import *
 
 
-TEST_FILE = "./Test/testfile.txt"
+TEST_FILE = "./test/testfile.txt"
 
 data = [("a\nb\nc\n"), ("d\nc\na\n")]
 
