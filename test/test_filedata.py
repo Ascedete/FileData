@@ -21,6 +21,10 @@ event SIMULATION_END;
 # reading
 
 
+def test_fileposition_representation():
+    print(FilePosition(19, 10))
+
+
 def test_creation():
     with open(TEST_FILE, "r") as fd:
         nd = FileData.data(fd)

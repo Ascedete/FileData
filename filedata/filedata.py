@@ -26,6 +26,10 @@ class FilePosition:
                 f"Cannot initialize FilePosition with line: {line}, column: {column} -> arguments need to be >= 1"
             )
 
+    def __repr__(self):
+        msg = f"Line: {self.line} Column: {self.column}"
+        return msg
+
 
 class FileData:
     """Store and manage File contents with multiple helpers"""
