@@ -59,7 +59,7 @@ class FileData:
     def copy(self):
         """Create a shallow copy of FileData"""
         nd = FileData(self._text)
-        nd.move_cursor(self.cursor)
+        nd.cursor = self.cursor
         return nd
 
     # Basic File Information
