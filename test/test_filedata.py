@@ -67,6 +67,12 @@ def test_copy():
     d1.next()
     d2 = d1.copy()
     assert d2.read() == d1.read() == "b"
+    # check correct copying after outer position
+    nd = nd = FileData("Alla.\nNext\n")
+    nd.move_cursor(FilePosition(2, 5))
+    nd.consume()
+    d = nd.copy()
+    assert d.read() is None
 
 
 @pytest.mark.parametrize("input", data)
