@@ -26,6 +26,17 @@ class FilePosition:
                 f"Cannot initialize FilePosition with line: {line}, column: {column} -> arguments need to be >= 1"
             )
 
+    def __add__(self, o: "tuple[int, int]"):
+        (l, c) = o
+        new_l = self.line + l
+        new_c = self.column + c
+        if not (new_l and new_c):
+            raise ValueError(f"Cannot move Cursor to line: {new_l} column: {new_c}")
+        else:
+            self.line = new_l
+            self.column = new_c
+        return self
+
     def __repr__(self):
         msg = f"Line: {self.line} Column: {self.column}"
         return msg
@@ -35,31 +46,46 @@ class FileData:
     """Store and manage File contents with multiple helpers"""
 
     @overload
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, remove_whitespace: bool = False) -> None:
         ...
 
     @overload
-    def __init__(self, text: list[str]) -> None:
+    def __init__(self, text: list[str], remove_whitespace: bool = False) -> None:
         ...
 
     @overload
-    def __init__(self, text: TextIO) -> None:
+    def __init__(self, text: TextIO, remove_whitespace: bool = False) -> None:
         ...
 
-    def __init__(self, text: str | list[str] | TextIO) -> None:
+    def __init__(
+        self, text: str | list[str] | TextIO, remove_whitespace: bool = False
+    ) -> None:
         if isinstance(text, str):
-            self._text = self._set_text(text)
+            if remove_whitespace:
+                txt = text.replace(" ", "")
+                self._text = self._set_text(txt)
+            else:
+                self._text = self._set_text(text)
+
         elif isinstance(text, list):
-            self._text = text
+            if remove_whitespace:
+                txt = [l.replace(" ", "") for l in text]
+                self._text = txt
+            else:
+                self._text = text
         else:
-            self._text = text.readlines()
+            if remove_whitespace:
+                txt = [l.replace(" ", "") for l in text.readlines()]
+                self._text = txt
+            else:
+                self._text = text.readlines()
 
         self.cursor: FilePosition = FilePosition(1, 1)
 
     def copy(self):
         """Create a shallow copy of FileData"""
         nd = FileData(self._text)
-        nd.move_cursor(self.cursor)
+        nd.cursor = self.cursor
         return nd
 
     # Basic File Information
@@ -85,10 +111,11 @@ class FileData:
 
     def isEOF(self):
         """Is cursor still pointing to correct file content or overbounds"""
-        if self._line_index() > self._max_index():
+        try:
+            self._current_character()
+            return False
+        except IndexError:
             return True
-
-        return self.isEOL()
 
     def next(self, direction: IterationStrategy = "Forward"):
         if direction == "Forward":
@@ -145,7 +172,7 @@ class FileData:
         if self.cursor.column == self._line_end():
             self.cursor = FilePosition(self.cursor.line + 1, 1)
         else:
-            self.cursor = FilePosition(self.cursor.line, self.cursor.column + 1)
+            self.cursor += (0, 1)
 
     def consume(self) -> Optional[str]:
         if not (c := self.read()):
