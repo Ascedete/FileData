@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typing import List, Literal, Optional, TextIO, overload
 
-from .result import Success, Error, IOResult
+from result.result import Success, Error, IOResult
 
 # FileDataResult = Result[str]
 IterationStrategy = Literal["Forward", "Reverse"]
@@ -85,7 +85,7 @@ class FileData:
     def copy(self):
         """Create a shallow copy of FileData"""
         nd = FileData(self._text)
-        nd.cursor = self.cursor
+        nd.cursor = FilePosition(self.cursor.line, self.cursor.column)
         return nd
 
     # Basic File Information
