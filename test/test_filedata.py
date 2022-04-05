@@ -92,7 +92,7 @@ def test_insert():
     input = data[0]
     nd = FileData(input)
     assert nd.insert(1, "z")
-    assert "".join(nd.text) == "z\n" + data[0]
+    assert "".join(nd.text.values()) == "z\n" + data[0]
     assert not nd.insert(0, "evil")
 
 
