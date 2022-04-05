@@ -243,6 +243,16 @@ class FileData:
     def data(cls, fd: TextIO) -> "FileData":
         return cls(fd.read())
 
+    def __hash__(self) -> int:
+        """Unsafe Hash under Assumption that only cursor will change, not content!"""
+        return hash((id(self.text), repr(self.cursor)))
+
+    def __eq__(self, __o: object) -> bool:
+        if isinstance(__o, FileData):
+            return id(self.text) == id(__o.text) and self.cursor == __o.cursor
+        else:
+            return False
+
 
 # -------------------------------------
 # Helpers to interact with FileData

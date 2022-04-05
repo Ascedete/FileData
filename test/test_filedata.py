@@ -123,3 +123,22 @@ def test_seek():
     assert l.find("event") is not -1
     assert old == data.cursor
     assert seek(data, "event", 5, "Reverse")
+
+
+def test_hashable():
+    nd1 = FileData("Hallo")
+    nd2 = FileData("Hello")
+    dict = {nd1.copy(): "ND1", nd2.copy(): "ND2"}
+    assert dict[nd1] == "ND1" and dict[nd2] == "ND2"
+
+    nd1.move_cursor(FilePosition(1, 3))
+    with pytest.raises(KeyError):
+        dict[nd1]
+
+    nd1.move_cursor(FilePosition(1, 1))
+    assert dict[nd1] == "ND1"
+
+    # WILL NOT WORK FOR MUTATED FILECONTENT!
+    # nd1.overwrite_line(1, "Evil!")
+    # with pytest.raises(KeyError):
+    #     dict[nd1]
