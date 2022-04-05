@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from typing import List, Literal, Optional, TextIO, overload
+from typing import Literal, Optional, TextIO, overload
 
 from result.result import Success, Error, IOResult
 
@@ -57,10 +57,19 @@ class FileData:
     def __init__(self, text: TextIO, remove_whitespace: bool = False) -> None:
         ...
 
+    @overload
+    def __init__(self, text: dict[int, str], remove_whitespace: bool = False) -> None:
+        ...
+
     def __init__(
-        self, text: str | list[str] | TextIO, remove_whitespace: bool = False
+        self,
+        text: "str | list[str] | TextIO | dict[int, str]",
+        remove_whitespace: bool = False,
     ) -> None:
-        if isinstance(text, str):
+        if isinstance(text, dict):
+            self._text = text
+
+        elif isinstance(text, str):
             if remove_whitespace:
                 txt = text.replace(" ", "")
                 self._text = self._set_text(txt)
@@ -70,15 +79,17 @@ class FileData:
         elif isinstance(text, list):
             if remove_whitespace:
                 txt = [l.replace(" ", "") for l in text]
-                self._text = txt
             else:
-                self._text = text
+                txt = text
+            self._text = self._set_text("".join([l + "\n" for l in txt]))
         else:
             if remove_whitespace:
-                txt = [l.replace(" ", "") for l in text.readlines()]
-                self._text = txt
+                txt = text.read().replace(" ", "")
+
             else:
-                self._text = text.readlines()
+                txt = text.read()
+
+            self._text = self._set_text(txt)
 
         self.cursor: FilePosition = FilePosition(1, 1)
 
@@ -97,46 +108,44 @@ class FileData:
         return self.cursor.line - 1
 
     def _line_end(self):
-        return len(self.text[self._line_index()])
+        return len(self.text[self.cursor.line])
 
     def isEOL(self):
-        return (self._line_end()) < self.cursor.column
+        return self.cursor.column >= self._line_end()
 
-    def _max_index(self):
-        return len(self.text) - 1
-
-    def _isIndexInbounds(self, index: int) -> bool:
-        """Will check if index is in range of currently saved text"""
-        return index > -1 and index <= self._max_index()
+    def _is_line_inbounds(self, line_nr: int):
+        try:
+            self.text[line_nr]
+            return True
+        except KeyError:
+            return False
 
     def isEOF(self):
         """Is cursor still pointing to correct file content or overbounds"""
-        try:
-            self._current_character()
-            return False
-        except IndexError:
-            return True
+        return not self._is_line_inbounds(self.cursor.line)
 
     def next(self, direction: IterationStrategy = "Forward"):
         if direction == "Forward":
-            if self._isIndexInbounds(self._line_index() + 1):
+            if self._is_line_inbounds(self.cursor.line + 1):
                 self.cursor = FilePosition(self.cursor.line + 1, 1)
             else:
                 return Error("Cannot move to next line -> EOF")
         elif direction == "Reverse":
-            if self._isIndexInbounds(self._line_index() - 1):
+            if self._is_line_inbounds(self.cursor.line - 1):
                 self.cursor = FilePosition(self.cursor.line - 1, 1)
             else:
                 return Error("Cannot move to next line -> EOF")
 
     # Reading file
     @property
-    def text(self) -> List[str]:
+    def text(self):
         """Represents filetext splitted per Line"""
         return self._text
 
     def _set_text(self, new: str):
-        return [line + "\n" for line in new.splitlines()]
+        input = new.splitlines(keepends=True)
+        content = dict([(i, input[i - 1]) for i in range(1, len(input) + 1)])
+        return content
 
     # @text.setter
     # def text(self, new: str):
@@ -150,23 +159,20 @@ class FileData:
         Default or linenr = -1 -> current line
         """
         if linenr == -1:
-            return self.text[self._line_index()][self.cursor.column - 1 : -1]
+            return self.text[self.cursor.line][self.cursor.column - 1 : -1]
 
-        if linenr > len(self.text):
-            return
+        if self._is_line_inbounds(linenr):
+            return self.text[linenr]
         else:
-            return self.text[linenr - 1]
+            return
 
     def _current_character(self):
-        return self.text[self.cursor.line - 1][self.cursor.column - 1]
+        return self.text[self.cursor.line][self.cursor.column - 1]
 
     def read(self) -> Optional[str]:
         if self.isEOF():
             return
-        if not self.isEOL():
-            return self._current_character()
-        else:
-            return self.text[self.cursor.line][0]
+        return self._current_character()
 
     def _next_character_cursor(self):
         if self.cursor.column == self._line_end():
@@ -189,10 +195,13 @@ class FileData:
         """Move the currently read fileposition to new_position
         if new_position outside of supported range, will raise IndexError
         """
-        if (l := self.readline(new_position.line)) and new_position.column <= len(l):
+        try:
+            self.text[new_position.line][new_position.column - 1]
             self.cursor = new_position
             return
-        else:
+        except IndexError:
+            return Error(f"Cannot move file cursor to position {new_position}")
+        except KeyError:
             return Error(f"Cannot move file cursor to position {new_position}")
 
     def __iter__(self):
@@ -202,7 +211,7 @@ class FileData:
             Generator over *lines* in file
         """
         while True:
-            yield self.text[self._line_index()]
+            yield self.text[self.cursor.line]
             if isinstance(self.next(), Error):
                 break
             else:
@@ -213,13 +222,12 @@ class FileData:
         """
         Set text at line index to newline if index is valid
         """
-        index = line_nr - 1
         cleaned = newline.rstrip("\n")
-        if self._isIndexInbounds(index):
-            self.text[index] = cleaned + "\n"
+        if self._is_line_inbounds(line_nr):
+            self.text[line_nr] = cleaned + "\n"
             return
         else:
-            return Error(f"given Index {index} not inbounds")
+            return Error(f"given line {line_nr} not inbounds")
 
     def insert(self, line_nr: int, new: str):
         """
@@ -228,11 +236,11 @@ class FileData:
         On Success -> Success Object
         If new contains \n -> adds multiple line to self from line_nr
         """
-        start_index = line_nr - 1
-        if self._isIndexInbounds(start_index):
-            splitted = new.splitlines()
-            for (i, line) in enumerate(splitted):
-                self.text.insert(start_index + i, line + "\n")
+        if self._is_line_inbounds(line_nr):
+            splitted = new.splitlines(keepends=True)
+            splitted.extend(map(lambda x: x.strip("\n"), self.text.values()))
+            self._text = self._set_text("".join([l + "\n" for l in splitted]))
+
             return Success("")
         else:
             return Error(
@@ -309,12 +317,12 @@ def save_filedata(data: FileData, file: str | TextIO | Path):
     if isinstance(file, str) or isinstance(file, Path):
         try:
             with open(file, "w", encoding="utf-8") as fd:
-                fd.writelines(data.text)
+                fd.writelines(data.text.values())
         except FileNotFoundError:
             return Error(f"Dumping failed -> not enough permission for {file}!")
 
     else:
-        file.writelines(data.text)
+        file.writelines(data.text.values())
     return
 
 
