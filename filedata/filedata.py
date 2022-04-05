@@ -147,32 +147,27 @@ class FileData:
         content = dict([(i, input[i - 1]) for i in range(1, len(input) + 1)])
         return content
 
-    # @text.setter
-    # def text(self, new: str):
-    #     text = [line + "\n" for line in new.splitlines()]
-    #     self._text = text
-    #     self.cursor = FilePosition(1, 1)
-
     def readline(self, linenr: int = -1) -> Optional[str]:
         """
         Read the whole line at line number
         Default or linenr = -1 -> current line
         """
-        if linenr == -1:
-            return self.text[self.cursor.line][self.cursor.column - 1 : -1]
-
-        if self._is_line_inbounds(linenr):
-            return self.text[linenr]
-        else:
+        try:
+            if linenr == -1:
+                return self.text[self.cursor.line][self.cursor.column - 1 : -1]
+            else:
+                return self.text[linenr]
+        except IndexError:
             return
 
     def _current_character(self):
         return self.text[self.cursor.line][self.cursor.column - 1]
 
     def read(self) -> Optional[str]:
-        if self.isEOF():
-            return
-        return self._current_character()
+        try:
+            return self._current_character()
+        except:
+            return None
 
     def _next_character_cursor(self):
         if self.cursor.column == self._line_end():
