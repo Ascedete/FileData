@@ -5,10 +5,12 @@ from pathlib import Path
 
 from typing import Literal, Optional, TextIO, overload
 
-from result.result import Success, Error, IOResult
+from result.result import Success, Error, Result
 
 # FileDataResult = Result[str]
 IterationStrategy = Literal["Forward", "Reverse"]
+
+IOResult = Result[None]
 
 
 @dataclass(init=False, eq=True, unsafe_hash=True, repr=True)
@@ -124,15 +126,17 @@ class FileData:
         """Is cursor still pointing to correct file content or overbounds"""
         return not self._is_line_inbounds(self.cursor.line)
 
-    def next(self, direction: IterationStrategy = "Forward"):
+    def next(self, direction: IterationStrategy = "Forward") -> IOResult:
         if direction == "Forward":
             if self._is_line_inbounds(self.cursor.line + 1):
                 self.cursor = FilePosition(self.cursor.line + 1, 1)
+                return Success(None)
             else:
                 return Error("Cannot move to next line -> EOF")
         elif direction == "Reverse":
             if self._is_line_inbounds(self.cursor.line - 1):
                 self.cursor = FilePosition(self.cursor.line - 1, 1)
+                return Success(None)
             else:
                 return Error("Cannot move to next line -> EOF")
 
@@ -193,7 +197,7 @@ class FileData:
         try:
             self.text[new_position.line][new_position.column - 1]
             self.cursor = new_position
-            return
+            return Success(None)
         except IndexError:
             return Error(f"Cannot move file cursor to position {new_position}")
         except KeyError:
@@ -220,11 +224,11 @@ class FileData:
         cleaned = newline.rstrip("\n")
         if self._is_line_inbounds(line_nr):
             self.text[line_nr] = cleaned + "\n"
-            return
+            return Success(None)
         else:
             return Error(f"given line {line_nr} not inbounds")
 
-    def insert(self, line_nr: int, new: str):
+    def insert(self, line_nr: int, new: str) -> IOResult:
         """
         Insert new at line_nr to self. line_nr is 1 based
         If position is outside of bounds, returns Error("NOT_INBOUNDS")
@@ -236,7 +240,7 @@ class FileData:
             splitted.extend(map(lambda x: x.strip("\n"), self.text.values()))
             self._text = self._set_text("".join([l + "\n" for l in splitted]))
 
-            return Success("")
+            return Success(None)
         else:
             return Error(
                 f"given line_nr: {line_nr} not inbounds of filedata with length: {len(self.text)}"
@@ -276,11 +280,11 @@ def seek(
     old_cursor = data.cursor
 
     if start:
-        if not data.move_cursor(FilePosition(start, 1)) is None:
+        if not data.move_cursor(FilePosition(start, 1)):
             return
 
     res = None
-    while data.next(strategy) is None:
+    while data.next(strategy):
         l = data.readline()
         assert (
             l is not None
@@ -318,7 +322,7 @@ def save_filedata(data: FileData, file: str | TextIO | Path):
 
     else:
         file.writelines(data.text.values())
-    return
+    return Success(None)
 
 
 # ------------------
@@ -409,4 +413,4 @@ def patch_line(nd: FileData, new: str, line_nr: int) -> IOResult:
     """
     Replace line at line_nr with new
     """
-    nd.overwrite_line(line_nr, new)
+    return nd.overwrite_line(line_nr, new)

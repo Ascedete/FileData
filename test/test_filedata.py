@@ -98,10 +98,10 @@ def test_insert():
 
 def test_move_cursor():
     nd = FileData(data[0])
-    assert nd.move_cursor(FilePosition(3, 1)) is None
+    assert nd.move_cursor(FilePosition(3, 1))
     c = nd.read()
     assert c and c == "c"
-    assert isinstance(nd.move_cursor(FilePosition(4, 1)), Error)
+    assert not nd.move_cursor(FilePosition(4, 1))
 
 
 def test_previous():
