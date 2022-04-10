@@ -5,12 +5,12 @@ from pathlib import Path
 
 from typing import Literal, Optional, TextIO, overload
 
-from result.result import Success, Error, Result
+from result.type_defines import Success, Error, Result
 
 # FileDataResult = Result[str]
 IterationStrategy = Literal["Forward", "Reverse"]
 
-IOResult = Result[None]
+IOResult = Result[None, str]
 
 
 @dataclass(init=False, eq=True, unsafe_hash=True, repr=True)
