@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="FileData",
-    version="0.1.9",
+    version="0.2",
     description="Process files and multiline strings with additional information such as current linenumber",
     author="PTS",
     packages=["filedata"],
