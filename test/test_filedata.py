@@ -1,10 +1,37 @@
+from shutil import copy
 import pytest
+from os import remove
 
-
+from pathlib import Path
 from filedata.filedata import *
 
 
-TEST_FILE = "./test/testfile.txt"
+# ********************************************
+# *  Provide a way to make temporal changes  *
+# ********************************************
+
+
+@dataclass
+class FileTester:
+    reference: Path
+    persistent: bool = False
+
+    def __post_init__(self):
+        self.__temp_file = self.reference.with_name("_tmp")
+
+    def __enter__(self):
+        copy(self.reference, self.__temp_file)
+        return self.__temp_file
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if not self.persistent:
+            try:
+                remove(self.__temp_file)
+            except NotImplementedError:
+                return
+
+
+TEST_FILE = Path("./test/testfile.txt")
 
 data = [("a\nb\nc\n"), ("d\nc\na\n")]
 
@@ -91,8 +118,9 @@ def test_insert():
     """Test if insert of new string works correctly"""
     input = data[0]
     nd = FileData(input)
-    assert nd.insert(1, "z")
-    assert "".join(nd.text.values()) == "z\n" + data[0]
+    res = nd.insert(1, "z")
+    assert res
+    assert "".join(res.val.text.values()) == "z\n" + data[0]
     assert not nd.insert(0, "evil")
 
 
@@ -142,3 +170,12 @@ def test_hashable():
     # nd1.overwrite_line(1, "Evil!")
     # with pytest.raises(KeyError):
     #     dict[nd1]
+
+
+def test_patch():
+    with FileTester(TEST_FILE) as tf:
+        assert patch(tf, "Hallo", "--- Marker ---")
+        with open(tf, "r") as nd:
+            data = FileData(nd)
+            assert data.text[4] == "Hallo\n"
+            assert len(data.text) == 10

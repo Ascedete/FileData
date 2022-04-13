@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal, Optional, TextIO, overload
 
 from result.type_defines import Success, Error, Result
+from result.methods import map
 
 # FileDataResult = Result[str]
 IterationStrategy = Literal["Forward", "Reverse"]
@@ -228,7 +229,7 @@ class FileData:
         else:
             return Error(f"given line {line_nr} not inbounds")
 
-    def insert(self, line_nr: int, new: str) -> IOResult:
+    def insert(self, line_nr: int, new: str):
         """
         Insert new at line_nr to self. line_nr is 1 based
         If position is outside of bounds, returns Error("NOT_INBOUNDS")
@@ -236,11 +237,12 @@ class FileData:
         If new contains \n -> adds multiple line to self from line_nr
         """
         if self._is_line_inbounds(line_nr):
-            splitted = new.splitlines(keepends=True)
-            splitted.extend(map(lambda x: x.strip("\n"), self.text.values()))
-            self._text = self._set_text("".join([l + "\n" for l in splitted]))
+            splitted = new.splitlines(keepends=False)
+            old = [l.strip("\n") for l in self.text.values()]
+            [old.insert(line_nr - 1 + i, splitted[i]) for i in range(len(splitted))]
+            nd = FileData(old)
 
-            return Success(None)
+            return Success(nd)
         else:
             return Error(
                 f"given line_nr: {line_nr} not inbounds of filedata with length: {len(self.text)}"
@@ -367,11 +369,8 @@ def _needs_patch(nd: FileData, new: str):
 
 def insert_content(nd: FileData, new: str, pos: int, path: Path):
     """dump the patch from pos to path"""
-    res = nd.insert(pos, new)
-    if not res:
-        return res
-    else:
-        return save_filedata(nd, path)
+
+    return map(lambda d: save_filedata(d, path), nd.insert(pos + 1, new))
 
 
 def patch(path: Path, new: str, position: int | str | list[str]):
@@ -389,6 +388,9 @@ def patch(path: Path, new: str, position: int | str | list[str]):
     except FileNotFoundError:
         return Error("FileNotFound")
 
+    if not (_needs_patch(nd, new)):
+        return Success(None)
+
     # now proceed with patching core
     if isinstance(position, int) or isinstance(position, str):
         # if isinstance(res := _get_trigger_start(nd, position), Error):
@@ -396,17 +398,8 @@ def patch(path: Path, new: str, position: int | str | list[str]):
         res = _get_trigger_start(nd, position)
     else:
         res = _get_trigger_start(nd, position[0])
-    if isinstance(res, Error):
-        return res
 
-    start = res.val
-    if not (_needs_patch(nd, new)):
-        return
-
-    return insert_content(nd, new, start, path)
-
-
-# Patch only a single line
+    return map(lambda start: insert_content(nd, new, start, path), res)
 
 
 def patch_line(nd: FileData, new: str, line_nr: int) -> IOResult:
