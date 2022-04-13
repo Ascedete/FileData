@@ -179,3 +179,6 @@ def test_patch():
             data = FileData(nd)
             assert data.text[4] == "Hallo\n"
             assert len(data.text) == 10
+
+        assert not patch(tf, "Evil", "Notfound")
+        assert not patch(Path("Not/found"), "Hallo", 1)

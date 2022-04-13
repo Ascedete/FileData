@@ -229,7 +229,7 @@ class FileData:
         else:
             return Error(f"given line {line_nr} not inbounds")
 
-    def insert(self, line_nr: int, new: str):
+    def insert(self, line_nr: int, new: str) -> Success[FileData] | Error[str]:
         """
         Insert new at line_nr to self. line_nr is 1 based
         If position is outside of bounds, returns Error("NOT_INBOUNDS")
@@ -370,10 +370,10 @@ def _needs_patch(nd: FileData, new: str):
 def insert_content(nd: FileData, new: str, pos: int, path: Path):
     """dump the patch from pos to path"""
 
-    return map(lambda d: save_filedata(d, path), nd.insert(pos + 1, new))
+    return nd.insert(pos + 1, new).bind(lambda d: save_filedata(d, path))
 
 
-def patch(path: Path, new: str, position: int | str | list[str]):
+def patch(path: Path, new: str, position: int | str | list[str]) -> IOResult:
     """
     Try to patch file at path with new at position
     if new contains newlines, multiple lines will be inserted
@@ -398,8 +398,10 @@ def patch(path: Path, new: str, position: int | str | list[str]):
         res = _get_trigger_start(nd, position)
     else:
         res = _get_trigger_start(nd, position[0])
-
-    return map(lambda start: insert_content(nd, new, start, path), res)
+    # return res.bind(lambda start: insert_content(nd, new, start, path))
+    return res.bind(lambda pos: nd.insert(pos + 1, new)).bind(
+        lambda d: save_filedata(d, path)
+    )
 
 
 def patch_line(nd: FileData, new: str, line_nr: int) -> IOResult:
